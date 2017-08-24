@@ -43,23 +43,22 @@
 //!
 //! ```no_run
 //! extern crate futures;
-//! extern crate tokio_core;
+//! extern crate tokio;
 //! extern crate tokio_io;
 //!
+//! use futures::thread::TaskRunner;
 //! use futures::{Future, Stream};
+//! use tokio::net::TcpListener;
 //! use tokio_io::AsyncRead;
 //! use tokio_io::io::copy;
-//! use tokio_core::net::TcpListener;
-//! use tokio_core::reactor::Core;
 //!
 //! fn main() {
-//!     // Create the event loop that will drive this server
-//!     let mut core = Core::new().unwrap();
-//!     let handle = core.handle();
-//!
 //!     // Bind the server's socket
 //!     let addr = "127.0.0.1:12345".parse().unwrap();
-//!     let listener = TcpListener::bind(&addr, &handle).unwrap();
+//!     let listener = TcpListener::bind(&addr).unwrap();
+//!
+//!     let mut tasks = TaskRunner::new();
+//!     let spawner = tasks.spawner();
 //!
 //!     // Pull out a stream of sockets for incoming connections
 //!     let server = listener.incoming().for_each(|(sock, _)| {
@@ -72,20 +71,20 @@
 //!         let bytes_copied = copy(reader, writer);
 //!
 //!         // ... after which we'll print what happened
-//!         let handle_conn = bytes_copied.map(|amt| {
-//!             println!("wrote {:?} bytes", amt)
+//!         let handle_conn = bytes_copied.map(|(amt, _, _)| {
+//!             println!("wrote {} bytes", amt)
 //!         }).map_err(|err| {
 //!             println!("IO error {:?}", err)
 //!         });
 //!
 //!         // Spawn the future as a concurrent task
-//!         handle.spawn(handle_conn);
+//!         spawner.spawn(handle_conn);
 //!
 //!         Ok(())
 //!     });
 //!
 //!     // Spin up the server on the event loop
-//!     core.run(server).unwrap();
+//!     tasks.block_until(server).unwrap();
 //! }
 //! ```
 
@@ -95,23 +94,16 @@
 extern crate bytes;
 #[macro_use]
 extern crate futures;
-extern crate iovec;
 extern crate mio;
-extern crate slab;
-extern crate tokio_io;
-
 #[macro_use]
-extern crate scoped_tls;
-
+extern crate tokio_io;
 #[macro_use]
 extern crate log;
 
 #[macro_use]
-#[doc(hidden)]
-pub mod io;
+mod statik;
 
-mod heap;
-#[doc(hidden)]
-pub mod channel;
+mod atomic_slab;
+mod global;
 pub mod net;
 pub mod reactor;

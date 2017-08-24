@@ -18,7 +18,7 @@
 //! messages.
 
 extern crate futures;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 
 use std::collections::HashMap;
@@ -29,21 +29,22 @@ use std::env;
 use std::io::{Error, ErrorKind, BufReader};
 
 use futures::Future;
+use futures::thread::TaskRunner;
 use futures::stream::{self, Stream};
-use tokio_core::net::TcpListener;
-use tokio_core::reactor::Core;
-use tokio_io::io;
+use tokio::net::TcpListener;
 use tokio_io::AsyncRead;
+use tokio_io::io;
 
 fn main() {
     let addr = env::args().nth(1).unwrap_or("127.0.0.1:8080".to_string());
     let addr = addr.parse().unwrap();
 
     // Create the event loop and TCP listener we'll accept connections on.
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    let socket = TcpListener::bind(&addr, &handle).unwrap();
+    let socket = TcpListener::bind(&addr).unwrap();
     println!("Listening on: {}", addr);
+
+    let mut tasks = TaskRunner::new();
+    let spawn = tasks.spawner();
 
     // This is a single-threaded server, so we can just use Rc and RefCell to
     // store the map of all connections we know about.
@@ -120,7 +121,7 @@ fn main() {
         let connections = connections.clone();
         let socket_reader = socket_reader.map_err(|_| ());
         let connection = socket_reader.map(|_| ()).select(socket_writer.map(|_| ()));
-        handle.spawn(connection.then(move |_| {
+        spawn.spawn(connection.then(move |_| {
             connections.borrow_mut().remove(&addr);
             println!("Connection {} closed.", addr);
             Ok(())
@@ -130,5 +131,5 @@ fn main() {
     });
 
     // execute server
-    core.run(srv).unwrap();
+    tasks.block_until(srv).unwrap();
 }

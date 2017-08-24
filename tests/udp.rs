@@ -1,13 +1,14 @@
 extern crate futures;
+extern crate tokio;
 #[macro_use]
-extern crate tokio_core;
+extern crate tokio_io;
 
 use std::io;
 use std::net::SocketAddr;
 
+use futures::thread::block_until;
 use futures::{Future, Poll, Stream, Sink};
-use tokio_core::net::{UdpSocket, UdpCodec};
-use tokio_core::reactor::Core;
+use tokio::net::{UdpSocket, UdpCodec};
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -17,16 +18,15 @@ macro_rules! t {
 }
 
 fn send_messages<S: SendFn + Clone, R: RecvFn + Clone>(send: S, recv: R) {
-    let mut l = t!(Core::new());
-    let mut a = t!(UdpSocket::bind(&([127, 0, 0, 1], 0).into(), &l.handle()));
-    let mut b = t!(UdpSocket::bind(&([127, 0, 0, 1], 0).into(), &l.handle()));
+    let mut a = t!(UdpSocket::bind(&([127, 0, 0, 1], 0).into()));
+    let mut b = t!(UdpSocket::bind(&([127, 0, 0, 1], 0).into()));
     let a_addr = t!(a.local_addr());
     let b_addr = t!(b.local_addr());
 
     {
         let send = SendMessage::new(a, send.clone(), b_addr, b"1234");
         let recv = RecvMessage::new(b, recv.clone(), a_addr, b"1234");
-        let (sendt, received) = t!(l.run(send.join(recv)));
+        let (sendt, received) = t!(block_until(send.join(recv)));
         a = sendt;
         b = received;
     }
@@ -34,18 +34,18 @@ fn send_messages<S: SendFn + Clone, R: RecvFn + Clone>(send: S, recv: R) {
     {
         let send = SendMessage::new(a, send, b_addr, b"");
         let recv = RecvMessage::new(b, recv, a_addr, b"");
-        t!(l.run(send.join(recv)));
+        t!(block_until(send.join(recv)));
     }
 }
 
 #[test]
 fn send_to_and_recv_from() {
-   send_messages(SendTo {}, RecvFrom {}); 
+   send_messages(SendTo {}, RecvFrom {});
 }
 
 #[test]
 fn send_and_recv() {
-    send_messages(Send {}, Recv {}); 
+    send_messages(Send {}, Recv {});
 }
 
 trait SendFn {
@@ -83,7 +83,7 @@ impl<S: SendFn> SendMessage<S> {
         SendMessage {
             socket: Some(socket),
             send: send,
-            addr: addr, 
+            addr: addr,
             data: data,
         }
     }
@@ -165,16 +165,15 @@ impl<R: RecvFn> Future for RecvMessage<R> {
 
 #[test]
 fn send_dgrams() {
-    let mut l = t!(Core::new());
-    let mut a = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
-    let mut b = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let mut a = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse())));
+    let mut b = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse())));
     let mut buf = [0u8; 50];
     let b_addr = t!(b.local_addr());
 
     {
         let send = a.send_dgram(&b"4321"[..], b_addr);
         let recv = b.recv_dgram(&mut buf[..]);
-        let (sendt, received) = t!(l.run(send.join(recv)));
+        let (sendt, received) = t!(block_until(send.join(recv)));
         assert_eq!(received.2, 4);
         assert_eq!(&received.1[..4], b"4321");
         a = sendt.0;
@@ -184,7 +183,7 @@ fn send_dgrams() {
     {
         let send = a.send_dgram(&b""[..], b_addr);
         let recv = b.recv_dgram(&mut buf[..]);
-        let received = t!(l.run(send.join(recv))).1;
+        let received = t!(block_until(send.join(recv))).1;
         assert_eq!(received.2, 0);
     }
 }
@@ -215,9 +214,8 @@ impl UdpCodec for Codec {
 
 #[test]
 fn send_framed() {
-    let mut l = t!(Core::new());
-    let mut a_soc = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
-    let mut b_soc = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let mut a_soc = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse())));
+    let mut b_soc = t!(UdpSocket::bind(&t!("127.0.0.1:0".parse())));
     let a_addr = t!(a_soc.local_addr());
     let b_addr = t!(b_soc.local_addr());
 
@@ -227,7 +225,7 @@ fn send_framed() {
 
         let send = a.send(&b"4567"[..]);
         let recv = b.into_future().map_err(|e| e.0);
-        let (sendt, received) = t!(l.run(send.join(recv)));
+        let (sendt, received) = t!(block_until(send.join(recv)));
         assert_eq!(received.0, Some(()));
 
         a_soc = sendt.into_inner();
@@ -240,7 +238,7 @@ fn send_framed() {
 
         let send = a.send(&b""[..]);
         let recv = b.into_future().map_err(|e| e.0);
-        let received = t!(l.run(send.join(recv))).1;
+        let received = t!(block_until(send.join(recv))).1;
         assert_eq!(received.0, Some(()));
     }
 }

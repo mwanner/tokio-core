@@ -6,7 +6,7 @@
 //! new message with a new destination. Overall, we then use this to construct a
 //! "ping pong" pair where two sockets are sending messages back and forth.
 
-extern crate tokio_core;
+extern crate tokio;
 extern crate env_logger;
 extern crate futures;
 
@@ -14,9 +14,9 @@ use std::io;
 use std::net::SocketAddr;
 use std::str;
 
+use futures::thread::TaskRunner;
 use futures::{Future, Stream, Sink};
-use tokio_core::net::{UdpSocket, UdpCodec};
-use tokio_core::reactor::Core;
+use tokio::net::{UdpSocket, UdpCodec};
 
 pub struct LineCodec;
 
@@ -37,14 +37,11 @@ impl UdpCodec for LineCodec {
 fn main() {
     drop(env_logger::init());
 
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
     // Bind both our sockets and then figure out what ports we got.
-    let a = UdpSocket::bind(&addr, &handle).unwrap();
-    let b = UdpSocket::bind(&addr, &handle).unwrap();
+    let a = UdpSocket::bind(&addr).unwrap();
+    let b = UdpSocket::bind(&addr).unwrap();
     let b_addr = b.local_addr().unwrap();
 
     // We're parsing each socket with the `LineCodec` defined above, and then we
@@ -74,6 +71,7 @@ fn main() {
     let b = b_sink.send_all(b_stream);
 
     // Spawn the sender of pongs and then wait for our pinger to finish.
-    handle.spawn(b.then(|_| Ok(())));
-    drop(core.run(a));
+    let mut tasks = TaskRunner::new();
+    tasks.spawner().spawn(b.then(|_| Ok(())));
+    drop(tasks.block_until(a));
 }

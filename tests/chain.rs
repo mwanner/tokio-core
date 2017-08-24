@@ -1,5 +1,5 @@
 extern crate futures;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 
 use std::net::TcpStream;
@@ -9,8 +9,7 @@ use std::io::{Write, Read};
 use futures::Future;
 use futures::stream::Stream;
 use tokio_io::io::read_to_end;
-use tokio_core::net::TcpListener;
-use tokio_core::reactor::Core;
+use tokio::net::TcpListener;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -21,8 +20,7 @@ macro_rules! t {
 
 #[test]
 fn chain_clients() {
-    let mut l = t!(Core::new());
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let t = thread::spawn(move || {
@@ -44,7 +42,7 @@ fn chain_clients() {
         read_to_end(a.chain(b).chain(c), Vec::new())
     });
 
-    let (_, data) = t!(l.run(copied));
+    let (_, data) = t!(futures::thread::block_until(copied));
     t.join().unwrap();
 
     assert_eq!(data, b"foo bar baz");
