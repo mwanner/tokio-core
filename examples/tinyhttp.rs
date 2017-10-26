@@ -136,7 +136,7 @@ fn main() {
 
         let guard = RunningThread::new();
         loop {
-            local::turn_reactor(Some(tick_duration.clone()));
+            local::turn_reactor(&guard, Some(tick_duration.clone()));
             event_loop.iterate(&guard);
             if use_dedicated_reactor_thread {
                 guard.park_thread();
@@ -254,7 +254,7 @@ fn worker<X>(rx: Option<mpsc::UnboundedReceiver<TcpStream>>,
     };
     let guard = RunningThread::new();
     loop {
-        local::turn_reactor(Some(tick_duration.clone()));
+        local::turn_reactor(&guard, Some(tick_duration.clone()));
         if local_timer.is_some() {
             local_timer.as_mut().unwrap().iterate();
         }
@@ -292,7 +292,7 @@ fn socket_handler<W>(socket: TcpStream, timer: Box<Timer<W>>, spawn: Spawner,
         counters.0 += 1;
     }
 
-    let f = timer.sleep(Duration::from_millis(100 * TICK_DURATION_MS))
+    let f = timer.sleep(Duration::from_millis(10 * TICK_DURATION_MS))
         .or_else(|_| { future::ok(()) })
         .and_then(move |_| {
             {
@@ -300,7 +300,7 @@ fn socket_handler<W>(socket: TcpStream, timer: Box<Timer<W>>, spawn: Spawner,
                 let mut counters = global_cnt.lock().unwrap();
                 counters.1 += 1;
 
-                if counters.1 % 1000000 == 0 {
+                if counters.1 % 1000 == 0 {
                     println!("Timeouts in flight: {}", counters.0 - counters.1);
                 }
             }

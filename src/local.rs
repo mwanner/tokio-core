@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::time::Duration;
 use std::thread::LocalKeyState;
 
+use futures::thread::RunningThread;
 use reactor::{Handle, Reactor, Turn};
 
 enum ReactorConfig {
@@ -57,12 +58,12 @@ pub fn reactor() -> Option<Handle> {
     })
 }
 
-pub fn turn_reactor(max_wait: Option<Duration>) -> Option<Turn> {
+pub fn turn_reactor(rt: &RunningThread, max_wait: Option<Duration>) -> Option<Turn> {
     REACTOR.with(|rc| match *rc.borrow_mut() {
         ReactorConfig::NotConfigured
             => panic!("no reactor configured for this thread"),
         ReactorConfig::OwnReactor(ref mut reactor)
-            => Some(reactor.turn(max_wait)),
+            => Some(reactor.turn_on_running_thread(rt, max_wait)),
         ReactorConfig::RemoteReactor(_) => None
     })
 }

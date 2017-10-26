@@ -13,6 +13,7 @@ use std::time::{Instant, Duration};
 
 use futures::executor;
 use futures::task::AtomicTask;
+use futures::thread::RunningThread;
 use log::LogLevel;
 use mio::event::Evented;
 use mio;
@@ -155,6 +156,11 @@ impl Reactor {
     /// indicate a serious application error.
     pub fn turn(&mut self, max_wait: Option<Duration>) -> Turn {
         let _enter = executor::enter();
+        self.poll(max_wait);
+        Turn { _priv: () }
+    }
+
+    pub fn turn_on_running_thread(&mut self, _rt: &RunningThread, max_wait: Option<Duration>) -> Turn {
         self.poll(max_wait);
         Turn { _priv: () }
     }
