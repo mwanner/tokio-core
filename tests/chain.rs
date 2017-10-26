@@ -8,7 +8,9 @@ use std::io::{Write, Read};
 
 use futures::Future;
 use futures::stream::Stream;
+use futures::thread::EventLoop;
 use tokio_io::io::read_to_end;
+use tokio::{local, global};
 use tokio::net::TcpListener;
 
 macro_rules! t {
@@ -20,10 +22,15 @@ macro_rules! t {
 
 #[test]
 fn chain_clients() {
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let t = thread::spawn(move || {
+        local::configure_remote_reactor(global_reactor);
+
         let mut s1 = TcpStream::connect(&addr).unwrap();
         s1.write_all(b"foo ").unwrap();
         let mut s2 = TcpStream::connect(&addr).unwrap();
@@ -42,7 +49,8 @@ fn chain_clients() {
         read_to_end(a.chain(b).chain(c), Vec::new())
     });
 
-    let (_, data) = t!(futures::thread::block_until(copied));
+    let mut event_loop = EventLoop::new();
+    let (_, data) = t!(event_loop.block_until(copied));
     t.join().unwrap();
 
     assert_eq!(data, b"foo bar baz");

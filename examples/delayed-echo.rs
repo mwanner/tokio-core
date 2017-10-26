@@ -1,9 +1,8 @@
-//! A "hello world" echo server with tokio-core
+//! A "hello world" deferred echo server with tokio-timer
 //!
 //! This server will create a TCP listener, accept connections in a loop, and
-//! simply write back everything that's read off of each TCP connection. Each
-//! TCP connection is processed concurrently with all other TCP connections, and
-//! each connection will have its own buffer that it's reading in/out of.
+//! simply write back everything that's read off of each TCP connection with a
+//! random delay.
 //!
 //! To see this server in action, you can run this in one terminal:
 //!
@@ -19,16 +18,107 @@
 
 extern crate futures;
 extern crate tokio;
+#[macro_use]
 extern crate tokio_io;
+extern crate tokio_timer;
 
 use std::env;
+use std::io;
+use std::cell::RefCell;
 use std::net::SocketAddr;
+use std::rc::Rc;
+use std::time::Duration;
 
-use futures::Future;
+use futures::{Async, Future, Poll};
 use futures::stream::Stream;
-use tokio_io::AsyncRead;
-use tokio_io::io::copy;
+use futures::thread::Spawner;
+use tokio_io::{AsyncRead, AsyncWrite};
+use tokio::{global, local};
 use tokio::net::TcpListener;
+use tokio_timer::{Timer, Worker};
+
+struct RequestHandler<R, W, X> {
+    source: R,
+    sink: Rc<RefCell<W>>,
+    spawner: Spawner,
+    timer: Timer<X>
+}
+
+impl<R, W, X> RequestHandler<R, W, X> {
+    fn new(source: R, sink: W, timer: Timer<X>, spawner: Spawner) -> RequestHandler<R, W, X> {
+        RequestHandler {
+            source: source,
+            sink: Rc::new(RefCell::new(sink)),
+            spawner: spawner,
+            timer: timer
+        }
+    }
+}
+
+impl<R, W, X> Future for RequestHandler<R, W, X>
+    where R: AsyncRead,
+          W: AsyncWrite + 'static,
+          X: Worker + 'static
+{
+    type Item = ();
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<(), io::Error> {
+        let mut buf = vec![0; 8192];
+        let n = try_nb!(self.source.read(&mut buf));
+        if n == 0 {
+            println!("Yup, null bytes remaining...");
+            Ok(Async::Ready(()))
+        } else {
+            // Set a timeout that expires in 500 milliseconds
+            let sleep = self.timer.sleep(Duration::from_millis(5000));
+            let sink = self.sink.clone();
+            let msg = sleep.then(move |_| ResponseHandler::new(sink, buf))
+                .or_else(move |_| Ok(()));
+
+            self.spawner.spawn(msg);
+
+            // Continue with the RequestHandler
+            Ok(Async::NotReady)
+        }
+    }
+}
+
+struct ResponseHandler<S> {
+    stream: Rc<RefCell<S>>,
+    data: Vec<u8>,
+    pos: usize
+}
+
+impl<S> ResponseHandler<S> {
+    fn new(stream: Rc<RefCell<S>>, data: Vec<u8>) -> ResponseHandler<S> {
+        ResponseHandler {
+            stream: stream,
+            data: data,
+            pos: 0
+        }
+    }
+}
+
+impl<S> Future for ResponseHandler<S>
+    where S: AsyncWrite
+{
+    type Item = ();
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<(), io::Error> {
+        let mut stream = self.stream.borrow_mut();
+
+        // If our buffer has some data, let's write it out!
+        while self.pos < self.data.len() {
+            let i = try_nb!(stream.write(&self.data[self.pos..]));
+            self.pos += i;
+        }
+        try_nb!(stream.flush());
+
+        Ok(Async::Ready(()))
+    }
+}
 
 fn main() {
     // Allow passing an address to listen on as the first argument of this
@@ -36,6 +126,9 @@ fn main() {
     // 127.0.0.1:8080 for connections.
     let addr = env::args().nth(1).unwrap_or("127.0.0.1:8080".to_string());
     let addr = addr.parse::<SocketAddr>().unwrap();
+
+    // Create the timer
+    let timer = Timer::default();
 
     // TODO: update dox
     // First up we'll create the event loop that's going to drive this server.
@@ -55,11 +148,15 @@ fn main() {
     // above and must be associated with an event loop, so we pass in a handle
     // to our event loop. After the socket's created we inform that we're ready
     // to go and start accepting connections.
+
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let socket = TcpListener::bind(&addr).unwrap();
     println!("Listening on: {}", addr);
 
     let mut run = futures::thread::EventLoop::new();
-    let spawn = run.spawner();
+    let spawner = run.spawner();
 
     // Here we convert the `TcpListener` to a stream of incoming connections
     // with the `incoming` method. We then define how to process each element in
@@ -71,53 +168,19 @@ fn main() {
     // method is itself a future representing processing the entire stream of
     // connections, and ends up being our server.
     let done = socket.incoming().for_each(move |(socket, addr)| {
+        let (source, sink) = socket.split();
+        let msg = RequestHandler::new(source, sink, timer.clone(), spawner.clone());
 
-        // Once we're inside this closure this represents an accepted client
-        // from our server. The `socket` is the client connection and `addr` is
-        // the remote address of the client (similar to how the standard library
-        // operates).
-        //
-        // We just want to copy all data read from the socket back onto the
-        // socket itself (e.g. "echo"). We can use the standard `io::copy`
-        // combinator in the `tokio-core` crate to do precisely this!
-        //
-        // The `copy` function takes two arguments, where to read from and where
-        // to write to. We only have one argument, though, with `socket`.
-        // Luckily there's a method, `Io::split`, which will split an Read/Write
-        // stream into its two halves. This operation allows us to work with
-        // each stream independently, such as pass them as two arguments to the
-        // `copy` function.
-        //
-        // The `copy` function then returns a future, and this future will be
-        // resolved when the copying operation is complete, resolving to the
-        // amount of data that was copied.
-        let (reader, writer) = socket.split();
-        let amt = copy(reader, writer);
-
-        // After our copy operation is complete we just print out some helpful
-        // information.
-        let msg = amt.then(move |result| {
+        let msg = msg.then(move |result| {
             match result {
-                Ok((amt, _, _)) => println!("wrote {} bytes to {}", amt, addr),
+                Ok(_) => println!("{}: connection closed", addr),
                 Err(e) => println!("error on {}: {}", addr, e),
             }
 
             Ok(())
         });
 
-        // And this is where much of the magic of this server happens. We
-        // crucially want all clients to make progress concurrently, rather than
-        // blocking one on completion of another. To achieve this we use the
-        // `spawn` function on `Handle` to essentially execute some work in the
-        // background.
-        //
-        // This function will transfer ownership of the future (`msg` in this
-        // case) to the event loop that `handle` points to. The event loop will
-        // then drive the future to completion.
-        //
-        // Essentially here we're spawning a new task to run concurrently, which
-        // will allow all of our clients to be processed concurrently.
-        spawn.spawn(msg);
+        spawner.spawn(msg);
 
         Ok(())
     });

@@ -83,7 +83,7 @@ impl<E> PollEvented<E> {
         let inner = match handle.inner() {
             Some(inner) => inner,
             None => return Err(io::Error::new(io::ErrorKind::Other,
-                                              "core has gone away")),
+                                              format!("reactor for {:?} has gone away", handle))),
         };
         let state = try!(inner.add_source(&io));
         Ok(PollEvented {

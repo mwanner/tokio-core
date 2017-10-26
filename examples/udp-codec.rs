@@ -12,9 +12,8 @@ extern crate futures;
 
 use std::io;
 use std::net::SocketAddr;
-use std::str;
 
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
 use futures::{Future, Stream, Sink};
 use tokio::net::{UdpSocket, UdpCodec};
 
@@ -71,7 +70,7 @@ fn main() {
     let b = b_sink.send_all(b_stream);
 
     // Spawn the sender of pongs and then wait for our pinger to finish.
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
     tasks.spawner().spawn(b.then(|_| Ok(())));
     drop(tasks.block_until(a));
 }

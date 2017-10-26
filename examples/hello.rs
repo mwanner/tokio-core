@@ -40,5 +40,6 @@ fn main() {
         Ok(())
     });
 
-    futures::thread::block_until(server).unwrap();
+    let mut runner = futures::thread::EventLoop::new();
+    runner.block_until(server).unwrap();
 }

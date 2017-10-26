@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::thread;
 
 use futures::Future;
-use futures::thread::{block_until, TaskRunner};
+use futures::thread::EventLoop;
 use futures::stream::Stream;
 use futures::sync::mpsc;
 use tokio::net::{TcpListener, TcpStream};
@@ -63,12 +63,13 @@ fn main() {
         next = (next + 1) % channels.len();
         Ok(())
     });
-    block_until(done).unwrap();
+    let mut runner = EventLoop::new();
+    runner.block_until(done).unwrap();
 }
 
 fn worker(rx: mpsc::UnboundedReceiver<TcpStream>) {
-    let mut tasks = TaskRunner::new();
-    let spawn = tasks.spawner();
+    let mut runner = EventLoop::new();
+    let spawn = runner.spawner();
 
     let done = rx.for_each(move |socket| {
         // First up when we receive a socket we associate it with our event loop
@@ -95,5 +96,5 @@ fn worker(rx: mpsc::UnboundedReceiver<TcpStream>) {
 
         Ok(())
     });
-    tasks.block_until(done).unwrap();
+    runner.block_until(done).unwrap();
 }

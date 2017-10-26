@@ -6,7 +6,7 @@ use std::io;
 
 use futures::future;
 use futures::prelude::*;
-use futures::thread;
+use futures::thread::EventLoop;
 use tokio::net::TcpListener;
 use tokio::reactor::Reactor;
 
@@ -19,7 +19,8 @@ fn drop_core_cancels() {
     let mut listener = TcpListener::from_listener(listener, &addr, handle).unwrap();
 
     let mut reactor = Some(reactor);
-    thread::block_until(future::poll_fn(|| {
+    let mut event_loop = EventLoop::new();
+    event_loop.block_until(future::poll_fn(|| {
         match listener.accept() {
             Ok(_) => return Ok(Async::Ready(())),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}

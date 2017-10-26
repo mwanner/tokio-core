@@ -9,6 +9,8 @@ use std::io::{Read, Write, BufReader, BufWriter};
 
 use futures::Future;
 use futures::stream::Stream;
+use futures::thread::EventLoop;
+use tokio::{local, global};
 use tokio_io::io::copy;
 use tokio::net::TcpListener;
 
@@ -24,14 +26,19 @@ fn echo_server() {
     const N: usize = 1024;
     drop(env_logger::init());
 
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let msg = "foo bar baz";
     let t = thread::spawn(move || {
+        local::configure_remote_reactor(global_reactor.clone());
         let mut s = t!(TcpStream::connect(&addr));
 
         let t2 = thread::spawn(move || {
+            local::configure_remote_reactor(global_reactor);
             let mut s = t!(TcpStream::connect(&addr));
             let mut b = vec![0; msg.len() * N];
             t!(s.read_exact(&mut b));
@@ -54,7 +61,8 @@ fn echo_server() {
         copy(a, b)
     });
 
-    let (amt, _, _) = t!(futures::thread::block_until(copied));
+    let mut event_loop = EventLoop::new();
+    let (amt, _, _) = t!(event_loop.block_until(copied));
     let (expected, t2) = t.join().unwrap();
     let actual = t2.join().unwrap();
 

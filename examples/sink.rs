@@ -25,7 +25,7 @@ use std::iter;
 use std::net::SocketAddr;
 
 use futures::Future;
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
 use futures::stream::{self, Stream};
 use tokio_io::IoFuture;
 use tokio::net::{TcpListener, TcpStream};
@@ -35,7 +35,7 @@ fn main() {
     let addr = env::args().nth(1).unwrap_or("127.0.0.1:8080".to_string());
     let addr = addr.parse::<SocketAddr>().unwrap();
 
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
     let spawn = tasks.spawner();
 
     let socket = TcpListener::bind(&addr).unwrap();

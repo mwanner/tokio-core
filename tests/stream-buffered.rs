@@ -9,8 +9,10 @@ use std::thread;
 
 use futures::Future;
 use futures::stream::Stream;
+use futures::thread::EventLoop;
 use tokio_io::io::copy;
 use tokio_io::AsyncRead;
+use tokio::{global, local};
 use tokio::net::TcpListener;
 
 macro_rules! t {
@@ -23,6 +25,9 @@ macro_rules! t {
 #[test]
 fn echo_server() {
     drop(env_logger::init());
+
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
 
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
@@ -48,7 +53,8 @@ fn echo_server() {
                     .take(2)
                     .collect();
 
-    t!(futures::thread::block_until(future));
+    let mut runner = EventLoop::new();
+    t!(runner.block_until(future));
 
     t.join().unwrap();
 }

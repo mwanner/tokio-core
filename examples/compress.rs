@@ -29,7 +29,7 @@ use std::env;
 use std::net::SocketAddr;
 
 use flate2::write::GzEncoder;
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
 use futures::{Future, Stream, Poll};
 use futures_cpupool::CpuPool;
 use tokio::net::{TcpListener, TcpStream};
@@ -47,7 +47,7 @@ fn main() {
     // (compressing) to. Here we just use a convenience constructor to create a
     // pool of threads equal to the number of CPUs we have.
     let pool = CpuPool::new_num_cpus();
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
     let spawn = tasks.spawner();
 
     // The compress logic will happen in the function below, but everything's

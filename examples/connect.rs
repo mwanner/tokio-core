@@ -24,7 +24,7 @@ use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 
-use futures::thread::{TaskRunner, BlockingSink};
+use futures::thread::{EventLoop, BlockingSink};
 use futures::sync::mpsc;
 use futures::Stream;
 
@@ -53,7 +53,7 @@ fn main() {
     thread::spawn(|| read_stdin(stdin_tx));
     let stdin_rx = stdin_rx.map_err(|_| panic!()); // errors not possible on rx
 
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
 
     // Now that we've got our stdin read we either set up our TCP connection or
     // our UDP connection to get a stream of bytes we're going to emit to

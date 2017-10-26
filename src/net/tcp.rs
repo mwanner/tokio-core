@@ -4,6 +4,10 @@ use std::mem;
 use std::net::{self, SocketAddr, Shutdown};
 use std::time::Duration;
 
+use net2::TcpBuilder;
+#[cfg(unix)]
+use net2::unix::UnixTcpBuilderExt;
+
 use bytes::{Buf, BufMut};
 use futures::stream::Stream;
 use futures::{Future, Poll, Async};
@@ -32,8 +36,24 @@ impl TcpListener {
     /// The TCP listener will bind to the provided `addr` address, if available.
     /// If the result is `Ok`, the socket has successfully bound.
     pub fn bind(addr: &SocketAddr) -> io::Result<TcpListener> {
-        let l = try!(mio::net::TcpListener::bind(addr));
-        TcpListener::new(l, Handle::default())
+        // Create the socket
+        let sock = match *addr {
+            SocketAddr::V4(..) => TcpBuilder::new_v4(),
+            SocketAddr::V6(..) => TcpBuilder::new_v6(),
+        }?;
+
+        // FIXME: hm.. I should care more about non-Linux platforms, I guess.
+        #[cfg(unix)]
+        sock.reuse_port(true)?;
+
+        // Bind the socket
+        sock.bind(addr)?;
+
+        // listen
+        let std_listener = sock.listen(1024)?;
+        let mio_listener = mio::net::TcpListener::from_listener(
+            std_listener, addr)?;
+        TcpListener::new(mio_listener, Handle::default())
     }
 
     /// Attempt to accept a connection and create a new connected

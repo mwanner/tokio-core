@@ -7,8 +7,9 @@ use std::sync::mpsc::channel;
 use std::thread;
 
 use futures::prelude::*;
-use futures::thread::block_until;
+use futures::thread::EventLoop;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::{global, local};
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -20,6 +21,10 @@ macro_rules! t {
 #[test]
 fn connect() {
     drop(env_logger::init());
+
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let srv = t!(net::TcpListener::bind("127.0.0.1:0"));
     let addr = t!(srv.local_addr());
     let t = thread::spawn(move || {
@@ -27,7 +32,8 @@ fn connect() {
     });
 
     let stream = TcpStream::connect(&addr);
-    let mine = t!(block_until(stream));
+    let mut event_loop = EventLoop::new();
+    let mine = t!(event_loop.block_until(stream));
     let theirs = t.join().unwrap();
 
     assert_eq!(t!(mine.local_addr()), t!(theirs.peer_addr()));
@@ -35,8 +41,12 @@ fn connect() {
 }
 
 #[test]
-fn accept() {
+fn accept1() {
     drop(env_logger::init());
+
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
@@ -50,7 +60,8 @@ fn accept() {
         net::TcpStream::connect(&addr).unwrap()
     });
 
-    let (mine, _remaining) = t!(block_until(client));
+    let mut event_loop = EventLoop::new();
+    let (mine, _remaining) = t!(event_loop.block_until(client));
     let mine = mine.unwrap();
     let theirs = t.join().unwrap();
 
@@ -61,6 +72,10 @@ fn accept() {
 #[test]
 fn accept2() {
     drop(env_logger::init());
+
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
@@ -75,7 +90,8 @@ fn accept2() {
     }).into_future().map_err(|e| e.0);
     assert!(rx.try_recv().is_err());
 
-    let (mine, _remaining) = t!(block_until(client));
+    let mut event_loop = EventLoop::new();
+    let (mine, _remaining) = t!(event_loop.block_until(client));
     mine.unwrap();
     t.join().unwrap();
 }

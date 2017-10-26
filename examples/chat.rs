@@ -29,7 +29,7 @@ use std::env;
 use std::io::{Error, ErrorKind, BufReader};
 
 use futures::Future;
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
 use futures::stream::{self, Stream};
 use tokio::net::TcpListener;
 use tokio_io::AsyncRead;
@@ -43,7 +43,7 @@ fn main() {
     let socket = TcpListener::bind(&addr).unwrap();
     println!("Listening on: {}", addr);
 
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
     let spawn = tasks.spawner();
 
     // This is a single-threaded server, so we can just use Rc and RefCell to

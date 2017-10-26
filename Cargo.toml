@@ -21,6 +21,7 @@ bytes = "0.4"
 futures = "0.1.16"
 log = "0.3"
 mio = "0.6.10"
+net2 = "0.2.29"
 tokio-io = "0.1"
 
 [dev-dependencies]
@@ -34,8 +35,9 @@ num_cpus = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
+tokio-timer = { path = '../tokio-timer' }
 time = "0.1"
 
 [replace]
-'futures:0.1.16' = { git = 'https://github.com/alexcrichton/futures-rs', branch = 'spawn' }
+'futures:0.1.16' = { git = 'https://github.com/mwanner/futures-rs', branch = 'event-loop' }
 'mio:0.6.10' = { git = 'https://github.com/alexcrichton/mio', branch = 'raw-accept' }

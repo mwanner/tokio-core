@@ -25,7 +25,7 @@ use std::env;
 use std::net::{Shutdown, SocketAddr};
 use std::io::{self, Read, Write};
 
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
 use futures::stream::Stream;
 use futures::{Future, Poll};
 use tokio::net::{TcpListener, TcpStream};
@@ -44,7 +44,7 @@ fn main() {
     println!("Listening on: {}", listen_addr);
     println!("Proxying to: {}", server_addr);
 
-    let mut tasks = TaskRunner::new();
+    let mut tasks = EventLoop::new();
     let spawn = tasks.spawner();
 
     let done = socket.incoming().for_each(move |(client, client_addr)| {

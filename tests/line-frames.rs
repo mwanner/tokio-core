@@ -9,7 +9,8 @@ use std::net::Shutdown;
 
 use bytes::{BytesMut, BufMut};
 use futures::prelude::*;
-use futures::thread::TaskRunner;
+use futures::thread::EventLoop;
+use tokio::{global, local};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_io::AsyncRead;
 use tokio_io::codec::{Encoder, Decoder};
@@ -52,7 +53,10 @@ impl Encoder for LineCodec {
 fn echo() {
     drop(env_logger::init());
 
-    let mut tasks = TaskRunner::new();
+    let global_reactor = global::start_reactor_thread();
+    local::configure_remote_reactor(global_reactor.clone());
+
+    let mut tasks = EventLoop::new();
     let spawner = tasks.spawner();
     let listener = TcpListener::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
     let addr = listener.local_addr().unwrap();

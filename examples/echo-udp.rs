@@ -60,7 +60,8 @@ fn main() {
 
     // Next we'll create a future to spawn (the one we defined above) and then
     // we'll run the event loop by running the future.
-    futures::thread::block_until(Server {
+    let mut runner = futures::thread::EventLoop::new();
+    runner.block_until(Server {
         socket: socket,
         buf: vec![0; 1024],
         to_send: None,

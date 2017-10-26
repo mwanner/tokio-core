@@ -1,5 +1,6 @@
+use std::cell::{RefCell};
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
@@ -11,15 +12,34 @@ struct HelperThread {
     reactor: Handle,
 }
 
-statik!(static DEFAULT: Option<HelperThread> = HelperThread::new().ok());
+statik!(static REACTOR_THREAD: Mutex<RefCell<Option<HelperThread>>>
+            = Mutex::new(RefCell::new(None)));
 
-pub fn reactor() -> Option<Handle> {
-    DEFAULT.with(|h| h.as_ref().map(|c| c.reactor.clone())).and_then(|x| x)
+pub fn start_reactor_thread() -> Handle {
+    let ht = HelperThread::new().unwrap();
+    let handle = ht.reactor.clone();
+    REACTOR_THREAD.with(|t| {
+        let success = {
+            let guard = t.lock().unwrap();
+            let mut data = guard.borrow_mut();
+            if data.is_some() {
+                false
+            } else {
+                *data = Some(ht);
+                true
+            }
+        };
+        // Panic only outside of the scope of the lock, above.
+        if !success {
+            panic!("can only start a single global reactor thread");
+        }
+    });
+    handle
 }
 
 #[allow(dead_code)]
-pub fn shutdown() {
-    DEFAULT.drop();
+pub fn shutdown_reactor_thread() {
+    REACTOR_THREAD.drop();
 }
 
 impl HelperThread {

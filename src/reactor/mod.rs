@@ -8,6 +8,7 @@ use std::fmt;
 use std::io::{self, ErrorKind};
 use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 use std::time::{Instant, Duration};
 
 use futures::executor;
@@ -15,6 +16,7 @@ use futures::task::AtomicTask;
 use log::LogLevel;
 use mio::event::Evented;
 use mio;
+use local;
 
 use atomic_slab::AtomicSlab;
 
@@ -22,6 +24,8 @@ mod poll_evented;
 pub use self::poll_evented::PollEvented;
 
 // An event loop.
+///
+/// FIXME: not the event loop at all, anymore!
 ///
 /// The event loop is the main source of blocking in an application which drives
 /// all other I/O events and notifications happening. Each event loop can have
@@ -68,10 +72,10 @@ pub struct Handle {
     repr: HandleRepr,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum HandleRepr {
     Ptr { inner: Weak<Inner> },
-    Global,
+    Default
 }
 
 struct ScheduledIo {
@@ -147,7 +151,7 @@ impl Reactor {
     /// # Panics
     ///
     /// This function will panic if an error happens while polling for events
-    /// (at the OS layer). This should never happend outside of situations that
+    /// (at the OS layer). This should never happen outside of situations that
     /// indicate a serious application error.
     pub fn turn(&mut self, max_wait: Option<Duration>) -> Turn {
         let _enter = executor::enter();
@@ -184,7 +188,12 @@ impl Reactor {
             }
         }
         if let Some(start) = start {
-            debug!("loop process - {} events, {:?}", events, start.elapsed());
+            let tid = thread::current().id();
+            let elapsed = start.elapsed();
+            let elapsed_ms = elapsed.as_secs() * 1000
+                + elapsed.subsec_nanos() as u64 / 1000;
+            debug!("loop process {:?} - {} events, {} ms",
+                tid, events, elapsed_ms);
         }
     }
 
@@ -246,6 +255,13 @@ impl Inner {
     }
 }
 
+impl fmt::Debug for Inner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Inner")
+         .finish()
+    }
+}
+
 impl fmt::Debug for Reactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Reactor")
@@ -287,22 +303,32 @@ impl Handle {
         }
     }
 
+    pub fn is_default(&self) -> bool {
+        match self.repr {
+            HandleRepr::Default => true,
+            _ => false
+        }
+    }
+
     fn inner(&self) -> Option<Arc<Inner>> {
         self.repr.inner()
     }
 }
 
 impl Default for Handle {
-    /// Acquires a handle to the global reactor.
+    /// Acquires a handle to the default reactor configured for this thread.
     ///
-    /// The global reactor is run in a separate thread in this process and is
-    /// lazily initialized. The first invocation of this function will spin up
-    /// the reactor.
+    /// This may either be a global reactor that runs in a separate thread of
+    /// this process. Or a local reactor runninng the currently active thread
+    /// itself.
     ///
     /// The `Handle` returned can be used to register I/O objects with the
-    /// reactor and create timeouts.
+    /// reactor.
     fn default() -> Handle {
-        Handle { repr: HandleRepr::Global }
+        if local::reactor().is_none() {
+            panic!("no reactor configured for the current thread");
+        }
+        Handle { repr: HandleRepr::Default }
     }
 }
 
@@ -310,7 +336,8 @@ impl HandleRepr {
     fn inner(&self) -> Option<Arc<Inner>> {
         match *self {
             HandleRepr::Ptr { ref inner, .. } => inner.upgrade(),
-            HandleRepr::Global => ::global::reactor().and_then(|x| x.inner()),
+            HandleRepr::Default => ::local::reactor()
+                .and_then(|x| x.inner() )
         }
     }
 }
@@ -318,6 +345,7 @@ impl HandleRepr {
 impl fmt::Debug for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Handle")
+         .field("repr", &self.repr)
          .finish()
     }
 }

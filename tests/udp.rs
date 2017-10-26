@@ -6,7 +6,7 @@ extern crate tokio_io;
 use std::io;
 use std::net::SocketAddr;
 
-use futures::thread::block_until;
+use futures::thread::EventLoop;
 use futures::{Future, Poll, Stream, Sink};
 use tokio::net::{UdpSocket, UdpCodec};
 
@@ -26,7 +26,8 @@ fn send_messages<S: SendFn + Clone, R: RecvFn + Clone>(send: S, recv: R) {
     {
         let send = SendMessage::new(a, send.clone(), b_addr, b"1234");
         let recv = RecvMessage::new(b, recv.clone(), a_addr, b"1234");
-        let (sendt, received) = t!(block_until(send.join(recv)));
+        let mut event_loop = EventLoop::new();
+        let (sendt, received) = t!(event_loop.block_until(send.join(recv)));
         a = sendt;
         b = received;
     }
@@ -34,7 +35,8 @@ fn send_messages<S: SendFn + Clone, R: RecvFn + Clone>(send: S, recv: R) {
     {
         let send = SendMessage::new(a, send, b_addr, b"");
         let recv = RecvMessage::new(b, recv, a_addr, b"");
-        t!(block_until(send.join(recv)));
+        let mut event_loop = EventLoop::new();
+        t!(event_loop.block_until(send.join(recv)));
     }
 }
 
@@ -173,7 +175,8 @@ fn send_dgrams() {
     {
         let send = a.send_dgram(&b"4321"[..], b_addr);
         let recv = b.recv_dgram(&mut buf[..]);
-        let (sendt, received) = t!(block_until(send.join(recv)));
+        let mut event_loop = EventLoop::new();
+        let (sendt, received) = t!(event_loop.block_until(send.join(recv)));
         assert_eq!(received.2, 4);
         assert_eq!(&received.1[..4], b"4321");
         a = sendt.0;
@@ -183,7 +186,8 @@ fn send_dgrams() {
     {
         let send = a.send_dgram(&b""[..], b_addr);
         let recv = b.recv_dgram(&mut buf[..]);
-        let received = t!(block_until(send.join(recv))).1;
+        let mut event_loop = EventLoop::new();
+        let received = t!(event_loop.block_until(send.join(recv))).1;
         assert_eq!(received.2, 0);
     }
 }
@@ -225,7 +229,8 @@ fn send_framed() {
 
         let send = a.send(&b"4567"[..]);
         let recv = b.into_future().map_err(|e| e.0);
-        let (sendt, received) = t!(block_until(send.join(recv)));
+        let mut event_loop = EventLoop::new();
+        let (sendt, received) = t!(event_loop.block_until(send.join(recv)));
         assert_eq!(received.0, Some(()));
 
         a_soc = sendt.into_inner();
@@ -238,8 +243,8 @@ fn send_framed() {
 
         let send = a.send(&b""[..]);
         let recv = b.into_future().map_err(|e| e.0);
-        let received = t!(block_until(send.join(recv))).1;
+        let mut event_loop = EventLoop::new();
+        let received = t!(event_loop.block_until(send.join(recv))).1;
         assert_eq!(received.0, Some(()));
     }
 }
-

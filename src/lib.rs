@@ -89,7 +89,9 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/tokio-core/0.1")]
-#![deny(missing_docs)]
+// FIXME: re-enable this #![deny(missing_docs)]
+
+#![feature(thread_local_state)]
 
 extern crate bytes;
 #[macro_use]
@@ -99,11 +101,14 @@ extern crate mio;
 extern crate tokio_io;
 #[macro_use]
 extern crate log;
+#[cfg(unix)]
+extern crate net2;
 
 #[macro_use]
 mod statik;
 
 mod atomic_slab;
-mod global;
+pub mod global;  // FIXME: privatize!
+pub mod local;   // FIXME: privatize!
 pub mod net;
 pub mod reactor;
